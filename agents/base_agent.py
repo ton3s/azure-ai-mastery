@@ -9,7 +9,6 @@ from pydantic import BaseModel, Field
 import semantic_kernel as sk
 from semantic_kernel.connectors.ai.open_ai import AzureChatCompletion
 from semantic_kernel.contents.chat_history import ChatHistory
-from semantic_kernel.prompt_template.prompt_template_config import PromptTemplateConfig
 
 from config.azure_config import config
 
@@ -65,14 +64,13 @@ class BaseAgent(ABC):
     def _setup_kernel(self):
         """Setup Semantic Kernel with Azure OpenAI"""
         # Add Azure OpenAI chat service
-        self.kernel.add_service(
-            AzureChatCompletion(
-                service_id="chat",
-                deployment_name=config.azure_openai_deployment_name,
-                endpoint=config.azure_openai_endpoint,
-                api_key=config.azure_openai_api_key,
-            )
+        self.chat_service = AzureChatCompletion(
+            service_id="chat",
+            deployment_name=config.azure_openai_deployment_name,
+            endpoint=config.azure_openai_endpoint,
+            api_key=config.azure_openai_api_key,
         )
+        self.kernel.add_service(self.chat_service)
     
     def _generate_system_prompt(self) -> str:
         """Generate system prompt based on personality"""
@@ -89,32 +87,41 @@ Maintain consistency with these traits in all interactions. Remember previous co
     
     async def think(self, prompt: str) -> str:
         """Internal thinking process using Semantic Kernel"""
-        # Create execution settings
-        execution_settings = sk.kernel_types.chat_completion.ChatCompletionSettings(
-            service_id="chat",
-            max_tokens=2000,
-            temperature=0.7,
-        )
-        
-        # Add system message to chat history if empty
-        if len(self.chat_history.messages) == 0:
-            self.chat_history.add_system_message(self.system_prompt)
-        
-        # Add user message
-        self.chat_history.add_user_message(prompt)
-        
-        # Get response
-        response = await self.kernel.invoke_prompt(
-            function_name="think",
-            plugin_name="agent",
-            prompt=prompt,
-            settings=execution_settings,
-        )
-        
-        # Add assistant message
-        self.chat_history.add_assistant_message(str(response))
-        
-        return str(response)
+        try:
+            # Use OpenAI library directly for now
+            from openai import AsyncAzureOpenAI
+            
+            client = AsyncAzureOpenAI(
+                azure_endpoint=config.azure_openai_endpoint,
+                api_key=config.azure_openai_api_key,
+                api_version="2024-02-01"
+            )
+            
+            messages = [
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": prompt}
+            ]
+            
+            response = await client.chat.completions.create(
+                model=config.azure_openai_deployment_name,
+                messages=messages,
+                max_tokens=2000,
+                temperature=0.7
+            )
+            
+            response_text = response.choices[0].message.content
+            
+            # Add to chat history
+            if len(self.chat_history.messages) == 0:
+                self.chat_history.add_system_message(self.system_prompt)
+            self.chat_history.add_user_message(prompt)
+            self.chat_history.add_assistant_message(response_text)
+            
+            return response_text
+            
+        except Exception as e:
+            self.logger.error(f"Think failed: {e}")
+            return f"I apologize, but I'm having difficulty processing that request: {str(e)}"
     
     def remember(self, event: Dict[str, Any]):
         """Store an event in memory"""
