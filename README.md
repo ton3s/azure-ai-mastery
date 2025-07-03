@@ -92,8 +92,15 @@ azure-ai-mastery/
 - Ensure your API key has proper permissions
 
 ### Semantic Kernel Issues
-- The project uses compatible versions to avoid Pydantic conflicts
-- If you still have issues, try: `pip install --upgrade semantic-kernel`
+- The project uses direct Azure OpenAI calls due to SK API limitations
+- We've bypassed SK's incomplete chat completion methods
+- If you encounter issues, run: `python test_setup.py`
+
+### Quick Test
+Run the test script to verify your setup:
+```bash
+python test_setup.py
+```
 
 ## 🎯 Next Steps
 
