@@ -89,40 +89,32 @@ Maintain consistency with these traits in all interactions. Remember previous co
         """Internal thinking process using Semantic Kernel"""
         try:
             # Create a fresh chat history for this thought
-            temp_chat_history = ChatHistory()
-            temp_chat_history.add_system_message(self.system_prompt)
-            temp_chat_history.add_user_message(prompt)
+            chat_history = ChatHistory()
             
-            # Create execution settings
-            settings = self.chat_service.instantiate_prompt_execution_settings(
-                service_id="chat",
-                max_tokens=2000,
-                temperature=0.7
+            # Add system message
+            chat_history.add_system_message(self.system_prompt)
+            
+            # Add user message
+            chat_history.add_user_message(prompt)
+            
+            # Get response from chat service
+            response = await self.chat_service.get_chat_message_content(
+                chat_history=chat_history,
+                settings=sk.PromptExecutionSettings(
+                    max_tokens=2000,
+                    temperature=0.7
+                )
             )
             
-            # Get response using the complete_chat method
-            responses = await self.chat_service.complete_chat(
-                chat_history=temp_chat_history,
-                settings=settings
-            )
-            
-            # Extract response text (complete_chat returns a list)
-            if responses and len(responses) > 0:
-                response_text = responses[0].content
-            else:
-                raise ValueError("No response received from chat service")
-            
-            # Add to persistent chat history
-            if len(self.chat_history.messages) == 0:
-                self.chat_history.add_system_message(self.system_prompt)
+            # Add to our persistent chat history
             self.chat_history.add_user_message(prompt)
-            self.chat_history.add_assistant_message(response_text)
+            self.chat_history.add_assistant_message(response.content)
             
-            return response_text
+            return response.content
             
         except Exception as e:
             self.logger.error(f"Think failed: {e}")
-            return f"I apologize, but I'm having difficulty processing that request: {str(e)}"
+            return f"I'm having trouble thinking right now: {str(e)}"
     
     def remember(self, event: Dict[str, Any]):
         """Store an event in memory"""

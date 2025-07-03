@@ -12,29 +12,49 @@ from config.azure_config import config
 
 
 async def test_azure_openai():
-    """Test direct Azure OpenAI connection"""
-    print("Testing Azure OpenAI connection...")
+    """Test Azure OpenAI connection via Semantic Kernel"""
+    print("Testing Azure OpenAI connection via Semantic Kernel...")
     
     try:
-        from openai import AsyncAzureOpenAI
+        import semantic_kernel as sk
+        from semantic_kernel.connectors.ai.open_ai import AzureChatCompletion
+        from semantic_kernel.contents.chat_history import ChatHistory
         
-        client = AsyncAzureOpenAI(
-            azure_endpoint=config.azure_openai_endpoint,
+        # Create kernel
+        kernel = sk.Kernel()
+        
+        # Add Azure OpenAI service
+        chat_service = AzureChatCompletion(
+            service_id="chat",
+            deployment_name=config.azure_openai_deployment_name,
+            endpoint=config.azure_openai_endpoint,
             api_key=config.azure_openai_api_key,
-            api_version="2024-02-01"
         )
+        kernel.add_service(chat_service)
         
-        response = await client.chat.completions.create(
-            model=config.azure_openai_deployment_name,
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": "Say 'Hello, Azure AI is working!' if you can read this."}
-            ],
+        # Create chat history
+        chat_history = ChatHistory()
+        chat_history.add_system_message("You are a helpful assistant.")
+        chat_history.add_user_message("Say 'Hello, Semantic Kernel + Azure AI is working!' if you can read this.")
+        
+        # Create execution settings
+        settings = chat_service.instantiate_prompt_execution_settings(
+            service_id="chat",
             max_tokens=50
         )
         
-        print(f"✓ Azure OpenAI responded: {response.choices[0].message.content}")
-        return True
+        # Get response
+        response = await chat_service.complete_chat(
+            chat_history=chat_history,
+            settings=settings
+        )
+        
+        if response and len(response) > 0:
+            print(f"✓ Azure OpenAI (via SK) responded: {response[0].content}")
+            return True
+        else:
+            print("✗ No response received from Azure OpenAI")
+            return False
         
     except Exception as e:
         print(f"✗ Azure OpenAI test failed: {e}")
