@@ -1,0 +1,27 @@
+# Core Semantic Kernel and Azure AI dependencies
+semantic-kernel==0.9.3b1
+openai>=1.0.0
+azure-identity==1.15.0
+azure-cosmos==4.5.1
+azure-functions==1.18.0
+
+# Pydantic - compatible version with semantic-kernel
+pydantic==2.5.3
+pydantic-settings==2.1.0
+
+# Additional dependencies
+python-dotenv>=1.0.1
+aiohttp==3.9.1
+numpy==1.26.3
+pandas==2.1.4
+
+# Development and testing
+pytest==7.4.4
+pytest-asyncio==0.21.1
+ipykernel==6.28.0
+notebook==7.0.7
+
+# Type checking and linting
+mypy==1.8.0
+black==23.12.1
+flake8==7.0.0
