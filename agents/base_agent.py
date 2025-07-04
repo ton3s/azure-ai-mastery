@@ -88,29 +88,37 @@ Maintain consistency with these traits in all interactions. Remember previous co
     async def think(self, prompt: str) -> str:
         """Internal thinking process using Semantic Kernel"""
         try:
+            # For newer SK versions, use get_chat_message_content
+            from semantic_kernel.contents.chat_history import ChatHistory
+            
             # Create a fresh chat history for this thought
             temp_chat_history = ChatHistory()
             temp_chat_history.add_system_message(self.system_prompt)
             temp_chat_history.add_user_message(prompt)
             
-            # Create execution settings
-            settings = self.chat_service.instantiate_prompt_execution_settings(
-                service_id="chat",
-                max_tokens=2000,
-                temperature=0.7
-            )
-            
-            # Get response using the complete_chat method
-            responses = await self.chat_service.complete_chat(
-                chat_history=temp_chat_history,
-                settings=settings
-            )
-            
-            # Extract response text (complete_chat returns a list)
-            if responses and len(responses) > 0:
-                response_text = responses[0].content
-            else:
-                raise ValueError("No response received from chat service")
+            # Try the new API first
+            try:
+                # For SK 1.x, use get_chat_message_content
+                response = await self.chat_service.get_chat_message_content(
+                    chat_history=temp_chat_history,
+                    settings={
+                        "max_tokens": 2000,
+                        "temperature": 0.7
+                    }
+                )
+                response_text = str(response.content) if hasattr(response, 'content') else str(response)
+            except AttributeError:
+                # Fallback to direct call
+                from semantic_kernel.connectors.ai.prompt_execution_settings import PromptExecutionSettings
+                settings = PromptExecutionSettings(
+                    max_tokens=2000,
+                    temperature=0.7
+                )
+                response = await self.chat_service.get_chat_message_contents(
+                    chat_history=temp_chat_history,
+                    settings=settings
+                )
+                response_text = response[0].content if response else "No response"
             
             # Add to persistent chat history
             if len(self.chat_history.messages) == 0:
