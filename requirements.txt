@@ -7,7 +7,7 @@ azure-functions==1.18.0
 semantic-kernel[azure]==1.34.0
 
 # Pydantic - compatible version with semantic-kernel 1.34.0
-pydantic>=2.6.0
+pydantic==2.11.2
 pydantic-settings>=2.2.0
 
 # Additional dependencies

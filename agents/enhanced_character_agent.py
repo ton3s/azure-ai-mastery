@@ -1,170 +1,227 @@
 import json
-import os
-from typing import Dict, Any
+from typing import Dict, List, Optional, Any
 from pathlib import Path
+import logging
 
-# Semantic Kernel imports
-from semantic_kernel import Kernel
-from semantic_kernel.agents import ChatCompletionAgent
-from semantic_kernel.connectors.ai.open_ai import AzureChatCompletion
-from semantic_kernel.plugins.core import ConversationSummaryPlugin, TextPlugin
+from agents.character_agent import CharacterAgent
 
-# Your existing imports
-from .character_memory import CharacterMemory
 
-class EnhancedCharacterAgent(ChatCompletionAgent):
-    """Enhanced character agent using SK Agent Framework"""
+class EnhancedCharacterAgent(CharacterAgent):
+    """Enhanced character agent with additional capabilities
     
-    def __init__(self, agent_id: str, character_file: str):
-        # Store identifiers
-        self.agent_id = agent_id
-        self.character_data = self._load_character_data(character_file)
-        
-        # Initialize enhanced memory
-        self.memory = CharacterMemory(agent_id)
-        
-        # Create kernel with Azure OpenAI
-        kernel = self._create_kernel()
-        
-        # Initialize SK Agent Framework
-        super().__init__(
-            service_id="azure_openai",
-            kernel=kernel,
-            name=self.character_data["name"],
-            instructions=self._build_enhanced_instructions(),
-            description=self.character_data.get("description", ""),
-        )
-        
-        # Keep compatibility with your existing code
-        self.name = self.character_data["name"]
+    This version extends CharacterAgent (not SK's ChatCompletionAgent)
+    to avoid Pydantic conflicts while still using SK internally.
+    """
     
-    def _load_character_data(self, character_file: str) -> Dict:
-        """Load character data (same as your current implementation)"""
-        file_path = Path(character_file)
-        if not file_path.exists():
-            return {
-                "name": "Unknown Character",
-                "personality": "A mysterious individual.",
-                "background": "Their past is unknown.",
-                "speaking_style": "Speaks formally.",
-                "expertise": ["General knowledge"],
-                "goals": ["Understanding"]
-            }
+    def __init__(
+        self,
+        agent_id: str,
+        character_file: Optional[str] = None,
+        character_data: Optional[Dict[str, Any]] = None
+    ):
+        # Initialize base character agent
+        super().__init__(agent_id, character_file, character_data)
         
-        with open(file_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
+        # Enhanced features
+        self.conversation_styles = self._extract_conversation_styles()
+        self.emotional_state = {"mood": "neutral", "energy": 100}
+        self.topic_expertise = self._extract_topic_expertise()
+        self.display_name = self.name  # For compatibility
+        
+        # Create separate enhanced memory storage
+        self.emotional_states = []
+        self.enhanced_relationships = {}
+        
+    def _extract_conversation_styles(self) -> Dict[str, Any]:
+        """Extract conversation styles from character data"""
+        return {
+            "formal": self.personality.get("formality", "medium"),
+            "humor": self.personality.get("humor", "moderate"),
+            "verbosity": self.personality.get("verbosity", "balanced"),
+            "empathy": self.personality.get("empathy", "normal")
+        }
     
-    def _create_kernel(self) -> Kernel:
-        """Create Semantic Kernel with Azure OpenAI"""
-        kernel = Kernel()
-        
-        # Add Azure OpenAI service
-        azure_openai = AzureChatCompletion(
-            deployment_name=os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT_NAME"),
-            endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
-            api_key=os.getenv("AZURE_OPENAI_API_KEY"),
-            service_id="azure_openai"
-        )
-        kernel.add_service(azure_openai)
-        
-        # Add useful plugins
-        kernel.add_plugin(ConversationSummaryPlugin(kernel=kernel), "conversation")
-        kernel.add_plugin(TextPlugin(), "text")
-        
-        return kernel
+    def _extract_topic_expertise(self) -> Dict[str, float]:
+        """Create a topic expertise map from knowledge areas"""
+        expertise = {}
+        for area in self.knowledge_areas:
+            expertise[area.lower()] = 0.9  # High expertise in defined areas
+        return expertise
     
-    def _build_enhanced_instructions(self) -> str:
-        """Build comprehensive character instructions"""
-        return f"""
-        CHARACTER IDENTITY:
-        Name: {self.character_data['name']}
+    async def process_message(self, message: str, context: Optional[Dict[str, Any]] = None) -> str:
+        """Enhanced message processing with emotional awareness and SK integration"""
+        # Update emotional state based on conversation
+        self._update_emotional_state(message, context)
         
-        PERSONALITY: {self.character_data.get('personality', '')}
-        BACKGROUND: {self.character_data.get('background', '')}
-        SPEAKING STYLE: {self.character_data.get('speaking_style', '')}
-        EXPERTISE: {', '.join(self.character_data.get('expertise', []))}
-        GOALS: {', '.join(self.character_data.get('goals', []))}
+        # Build enhanced prompt with emotional and contextual information
+        enhanced_message = self._build_enhanced_message(message, context)
         
-        BEHAVIORAL GUIDELINES:
-        1. Always respond in character, maintaining personality consistency
-        2. Reference your background and expertise when relevant
-        3. Build upon previous conversations and relationships
-        4. Adapt your response style based on communication context
-        5. Show growth and learning from interactions
+        # Use the parent class method which uses SK internally
+        response = await super().process_message(enhanced_message, context)
         
-        MEMORY AND RELATIONSHIPS:
-        - Remember previous conversations and build relationships
-        - Acknowledge familiarity levels with other characters
-        - Reference shared experiences when appropriate
-        - Show emotional intelligence in responses
-        """
+        # Update memory and relationships
+        self._update_memory(message, response, context)
+        
+        # Apply conversation style adjustments
+        response = self._apply_conversation_style(response, context)
+        
+        return response
     
-    async def process_message(self, message: str, context: Dict = None) -> str:
-        """
-        MAIN METHOD: Replace your current process_message with this
-        Compatible with your existing TwoAgentConversation code
-        """
-        context = context or {}
+    def _build_enhanced_message(self, message: str, context: Optional[Dict[str, Any]] = None) -> str:
+        """Build an enhanced message with emotional and contextual information"""
+        message_parts = [message]
         
-        # Enhance message with relationship and context data
-        enhanced_message = await self._enhance_message_with_context(message, context)
+        # Add emotional context
+        message_parts.append(f"\n[Your current mood is {self.emotional_state['mood']} with energy level {self.emotional_state['energy']}%]")
         
-        try:
-            # Use SK Agent Framework for intelligent response
-            response = await self.invoke_async(enhanced_message)
+        # Check if this is a topic we have expertise in
+        if self._check_topic_expertise(message):
+            message_parts.append("\n[You are highly knowledgeable about this topic]")
+        
+        # Add relationship context if available
+        if context and "from_agent" in context:
+            # Check both base relationships and enhanced relationships
+            base_rel = self.memory.relationships.get(context["from_agent"], {})
+            enhanced_rel = self.enhanced_relationships.get(context["from_agent"], {})
+            relationship = {**base_rel, **enhanced_rel}  # Merge both
+            if relationship:
+                message_parts.append(f"\n[Your relationship with {context['from_agent']}: {json.dumps(relationship)}]")
+        
+        return "\n".join(message_parts)
+    
+    def _update_emotional_state(self, message: str, context: Optional[Dict[str, Any]] = None):
+        """Update emotional state based on conversation"""
+        message_lower = message.lower()
+        
+        if any(word in message_lower for word in ["wonderful", "excellent", "brilliant", "fascinating"]):
+            self.emotional_state["mood"] = "excited"
+            self.emotional_state["energy"] = min(100, self.emotional_state["energy"] + 10)
+        elif any(word in message_lower for word in ["difficult", "problem", "concern", "worry"]):
+            self.emotional_state["mood"] = "concerned"
+            self.emotional_state["energy"] = max(0, self.emotional_state["energy"] - 5)
+        elif any(word in message_lower for word in ["thank", "appreciate", "grateful"]):
+            self.emotional_state["mood"] = "pleased"
+        
+        # Energy naturally decreases over long conversations
+        if context and "conversation_turn" in context:
+            self.emotional_state["energy"] = max(50, 100 - (context["conversation_turn"] * 5))
+    
+    def _check_topic_expertise(self, message: str) -> bool:
+        """Check if the message relates to our areas of expertise"""
+        message_lower = message.lower()
+        for topic, confidence in self.topic_expertise.items():
+            if topic in message_lower and confidence > 0.7:
+                return True
+        return False
+    
+    def _apply_conversation_style(self, response: str, context: Optional[Dict[str, Any]] = None) -> str:
+        """Apply conversation style adjustments to response"""
+        # In a full implementation, this could modify the response based on:
+        # - Formality level
+        # - Humor settings
+        # - Verbosity preferences
+        # - Empathy requirements
+        return response
+    
+    def _update_memory(self, message: str, response: str, context: Optional[Dict[str, Any]] = None):
+        """Update agent memory with interaction"""
+        # Add to short-term memory with emotional state
+        self.remember({
+            "type": "conversation",
+            "message": message,
+            "response": response,
+            "emotional_state": self.emotional_state.copy()
+        })
+        
+        # Store emotional states
+        self.emotional_states.append(self.emotional_state.copy())
+        if len(self.emotional_states) > 20:
+            self.emotional_states = self.emotional_states[-20:]
+        
+        # Update enhanced relationships
+        if context and "from_agent" in context:
+            agent_id = context["from_agent"]
+            if agent_id not in self.enhanced_relationships:
+                self.enhanced_relationships[agent_id] = {
+                    "interaction_count": 0,
+                    "sentiment": "neutral",
+                    "emotional_impact": []
+                }
             
-            # Store interaction in memory
-            if "from_agent" in context:
-                self.memory.remember_interaction(
-                    context["from_agent"], 
-                    message, 
-                    response, 
-                    context
-                )
+            self.enhanced_relationships[agent_id]["interaction_count"] += 1
+            self.enhanced_relationships[agent_id]["emotional_impact"].append(self.emotional_state["mood"])
             
-            return response
+            # Simple sentiment analysis
+            sentiment = "neutral"
+            if any(word in message.lower() for word in ["thank", "appreciate", "wonderful", "excellent"]):
+                sentiment = "positive"
+            elif any(word in message.lower() for word in ["problem", "issue", "concern", "upset"]):
+                sentiment = "concerned"
             
-        except Exception as e:
-            # Fallback response
-            return f"I apologize, but I'm having difficulty processing that request. As {self.name}, I'd like to help but need a moment to gather my thoughts."
+            self.enhanced_relationships[agent_id]["sentiment"] = sentiment
+            
+            # Also update the base class memory's relationships
+            self.update_relationship(agent_id, {
+                "last_interaction": message,
+                "sentiment": sentiment
+            })
     
-    async def _enhance_message_with_context(self, message: str, context: Dict) -> str:
-        """Enhance message with relationship and conversation context"""
-        enhanced_parts = [message]
+    async def reflect_on_conversation(self, conversation_history: List[Dict[str, Any]]) -> str:
+        """Reflect on a completed conversation"""
+        # Build a summary of the conversation
+        summary_prompt = f"""As {self.name}, reflect on this conversation you just had:
+
+{self._format_conversation_history(conversation_history)}
+
+Provide a brief reflection on:
+1. What you learned from this interaction
+2. How you feel about the other participant
+3. Any insights or conclusions you've drawn
+
+Stay in character and respond as {self.name} would."""
         
-        # Add relationship context
-        if "from_agent" in context:
-            relationship_context = self.memory.get_relationship_context(context["from_agent"])
-            enhanced_parts.append(f"\n[RELATIONSHIP CONTEXT: {relationship_context}]")
+        reflection = await self.think(summary_prompt)
         
-        # Add communication pattern context
-        comm_pattern = context.get("communication_pattern", "normal")
-        if comm_pattern != "normal":
-            enhanced_parts.append(f"\n[COMMUNICATION TYPE: {comm_pattern}]")
+        # Store the reflection as a long-term memory
+        self.memory.long_term["last_reflection"] = {
+            "content": reflection,
+            "conversation_length": len(conversation_history),
+            "emotional_journey": self.emotional_states[-5:]
+        }
         
-        # Add conversation history
-        if "conversation_history" in context and context["conversation_history"]:
-            recent_history = context["conversation_history"][-2:]
-            history_summary = "\n".join([
-                f"- {h.get('speaker', 'Someone')}: {h.get('message', '')[:50]}..." 
-                for h in recent_history
-            ])
-            enhanced_parts.append(f"\n[RECENT CONVERSATION:\n{history_summary}]")
-        
-        return "\n".join(enhanced_parts)
+        return reflection
     
-    def get_memory_summary(self) -> Dict:
+    def _format_conversation_history(self, history: List[Dict[str, Any]]) -> str:
+        """Format conversation history for reflection"""
+        formatted = []
+        for exchange in history[-5:]:  # Last 5 exchanges
+            formatted.append(f"{exchange.get('speaker', 'Unknown')}: {exchange.get('message', '')}")
+            if 'response' in exchange:
+                formatted.append(f"{exchange.get('listener', 'Unknown')}: {exchange.get('response', '')}")
+        return "\n".join(formatted)
+    
+    def get_emotional_state(self) -> Dict[str, Any]:
+        """Get current emotional state"""
+        return self.emotional_state.copy()
+    
+    def reset_emotional_state(self):
+        """Reset emotional state to default"""
+        self.emotional_state = {"mood": "neutral", "energy": 100}
+    
+    def get_memory_summary(self) -> Dict[str, Any]:
         """Get agent memory summary"""
         return {
             "character_id": self.agent_id,
             "name": self.name,
-            "total_conversations": sum(len(convs) for convs in self.memory.conversations.values()),
+            "emotional_state": self.emotional_state,
+            "total_memories": len(self.memory.short_term),
             "relationships": {
                 agent_id: {
-                    "familiarity": rel["familiarity"],
-                    "trust_level": rel["trust_level"],
-                    "conversation_count": rel["conversation_count"]
+                    "interaction_count": rel.get("interaction_count", 0),
+                    "sentiment": rel.get("sentiment", "neutral"),
+                    "emotional_impact": rel.get("emotional_impact", [])[-3:] if "emotional_impact" in rel else []
                 }
-                for agent_id, rel in self.memory.relationships.items()
+                for agent_id, rel in self.enhanced_relationships.items()
             }
         }
+    

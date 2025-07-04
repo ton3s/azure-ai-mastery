@@ -9,6 +9,7 @@ from typing import Dict, Any, Optional, Tuple, List
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from agents.character_agent import CharacterAgent
+from agents.enhanced_character_agent import EnhancedCharacterAgent
 
 
 class CharacterDrivenConversation:
@@ -556,7 +557,7 @@ async def main():
             custom_scenarios = [
                 {
                     "title": "First Meeting",
-                    "topic": "What was your favorite moment in your career?"
+                    "topic": "I hate you! I can't believe we have to work together on this project."
                 },
                 {
                     "title": "Problem Discussion",
